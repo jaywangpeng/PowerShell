@@ -1,5 +1,5 @@
 ﻿#Where the new will be created
-$OUPath = 'OU=People,OU=Accounts,OU=UAT,DC=caanz,DC=com'
+$OUPath = 'OU=People,OU=Accounts,OU=DEV,DC=caanz,DC=com'
 
 #Functions
 function CreateNewUser(){
