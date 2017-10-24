@@ -1,11 +1,11 @@
-﻿# This script is to delete the cache folder on all YSOFT servers with
+# This script is to delete the cache folder on all YSOFT servers with
 # the restart of all the Ysoft services.
 # Written by Jay Wang
 # Release Date: Oct. 6th, 2017
 # Version 1.0
 
-$Servers = 'ADL-PRNT-V04','BNE-PRNT-V03','CBR-PRNT-V06','MEL-PRNT-V05',`
-'NZD-PRNT-V08','PER-PRNT-V07','SYD-PRNT-V02','ECP-PRNT-V01'
+# Server names are placeholders which need to be updated.
+$Servers = '<Server1>','<Server2>','<Server3>'...
 
 # wildcard all YSoft services
 $ServiceName = 'YSoft*'
