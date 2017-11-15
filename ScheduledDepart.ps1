@@ -1,12 +1,13 @@
 ﻿# Written by Jay Wang
-# Released date: 09/11/2017
+# Released date: 14/11/2017
+# Version 1.0
 
-# PST path to be exported to
-$PSTPath = '\\syd-fil-v01\ManualArchive\ArchivedUserPSTs'
 # Used to get the date in users.csv
 $Today = Get-Date
-# Count how many users to depart for today
+# Counters of users, mailboxes, Lync accounts to depart for today
 $UserCount = 0
+$MailboxCount = 0
+$LyncCount = 0
 # Account used to connect to Lync
 $AdmName = 'caanz\svc_runningscript'
 # Write a log which shows it has been run.
@@ -24,13 +25,19 @@ catch {
     exit
 }
 
-# Check if there are users to depart and count them
+# Check how many users, mailboxes, lync accounts to depart and count them
 foreach ($Line in $csv) {
     if (($Line.DepartDay.ToInt32($null) -eq $Today.Day) -and
         ($Line.DepartMonth.ToInt32($null) -eq $Today.Month) -and
         ($Line.DepartYear.ToInt32($null) -eq $Today.Year))
     {
         $UserCount += 1
+        if (($Line.ExportPST -eq 'Y') -or ($Line.FwdEmail -eq 'Y')) {
+            $MailboxCount += 1
+        }
+        if ($Line.FwdLync -eq 'Y') {
+            $LyncCount += 1
+        }
     }
 }
 
@@ -53,7 +60,7 @@ catch {
 # Email function to be used when task failed
 function Send-Email {
     $From = 'ScheduledTask@charteredaccountantsanz.com'
-    $To = 'jay.wang@charteredaccountantsanz.com'
+    $To = 'ICTOperationsTeam@charteredaccountantsanz.com'
     $Subject = 'Scheduled Task Failed'
     $Body = "The task Scheduled Depart on ECP-RMA-V03 is having errors.
     Please check the attachment or at
@@ -74,42 +81,59 @@ function Send-Email {
 # Function to connect to Exchange
 # Kerberos is okay to use to connect to Exchange, but not Lync
 function Connect-ExchangeAndLync {
-    $ConnectionUri = 'http://ecp-exch-v01.caanz.com/powershell/'
-    $SessionExch = New-PSSession -ConfigurationName Microsoft.Exchange `
-        -ConnectionUri $ConnectionUri `
-        -Authentication Kerberos `
-        -ErrorAction Stop
-    Import-PSSession $SessionExch -ErrorAction Stop
+    if ($MailboxCount -gt 0) {
+        $ConnectionUri = 'http://ecp-exch-v01.caanz.com/powershell/'
+        $SessionExch = New-PSSession -ConfigurationName Microsoft.Exchange `
+            -ConnectionUri $ConnectionUri `
+            -Authentication Kerberos `
+            -ErrorAction Stop
+        Import-PSSession $SessionExch -ErrorAction Stop
+    }
 
-    # Lync has to use credential to connect.
-    $ConnectionUri = 'https://lyncpool.caanz.com/ocspowershell'
-    $SessionLync = New-PSSession -ConnectionUri $ConnectionUri `
-        -Credential $Cred `
-        -ErrorAction Stop
-    Import-PSSession $SessionLync -ErrorAction Stop
+    if ($LyncCount -gt 0) {
+        # Lync has to use credential to connect.
+        $ConnectionUri = 'https://lyncpool.caanz.com/ocspowershell'
+        $SessionLync = New-PSSession -ConnectionUri $ConnectionUri `
+            -Credential $Cred `
+            -ErrorAction Stop
+        Import-PSSession $SessionLync -ErrorAction Stop
+    }
 }
 
-# Function to disable the mailbox of a user and export PST as needed
-function Disable-UserMailbox ($Name) {
-    # Disable Unified Messaging
-    Disable-UMMailbox -Identity $Name -Confirm:$false -ErrorAction Stop
-    "$(Get-Date -Format G): Disabled UM mailbox $Name" >> .\logs.txt
-    # Disable the mailbox
-    Disable-Mailbox -Identity $Name -Confirm:$false -ErrorAction Stop
-    "$(Get-Date -Format G): Disabled mailbox $Name" >> .\logs.txt
+function Export-PST ($Name, $FullName) {
+    # PST path to be exported to
+    $PSTPath = '\\syd-fil-v01\ManualArchive\ArchivedUserPSTs'
+    try {
+        # Create the export request
+        $ExportRequest = New-MailboxExportRequest -Mailbox $Name -FilePath "$PSTPath\$FullName.pst" `
+            -ErrorAction Stop
+    }
+    catch {
+        "$(Get-Date -Format G): Failed to create export request $Name" >> .\logs.txt
+        Send-Email
+        return $false
+    }
+    do {
+        # Wait 60 seconds to let the export request run
+        Start-Sleep -Seconds 60
+        # Query the export status
+        $Request = Get-MailboxExportRequest -Identity $ExportRequest.Identity
+        if ($Request.Status -in 'Completed','CompletedWithWarning') {
+            # Write log
+            "$(Get-Date -Format G): Exported PST to $PSTPath\$FullName.pst" >> .\logs.txt
+            return $true
+        } elseif ($Request.Status -in 'Failed','AutoSuspended','None','Suspended','Synced') {
+            # When the export job status is failed or pending
+            "$(Get-Date -Format G): $Name Export PST failed" >> .\logs.txt
+            Send-Email
+            return $false
+        } else {
+            continue
+        }
+    } while ($true)
 }
 
-# Function to remove a user from Lync server
-# Connect PS remote session to Lync are inclusive
-# Disconnect PS remote session to Lync must be written outside this function
-function Remove-LyncUser ($Name) {
-    # Delete Lync user
-    Disable-CsUser -Identity $Name -Confirm:$false -ErrorAction Stop
-    "$(Get-Date -Format G): Removed Lync user $Name" >> .\logs.txt
-}
-
-
-# Establish connection if there are users to be departed today
+# Establish connection if there are users to depart today
 if ($UserCount -gt 0) {
     try {
         Connect-ExchangeAndLync
@@ -129,85 +153,45 @@ if (($UserCount -gt 0) -and ($ConnectFlag -eq $true)) {
             ($Line.DepartMonth.ToInt32($null) -eq $Today.Month) -and
             ($Line.DepartYear.ToInt32($null) -eq $Today.Year))
         {
-            # 1. When the mailbox is shared to others without any forwarding
-            if (($Line.ExportPST -eq 'Y') -and ($Line.FwdEmail -eq 'N')) {
-                try {
-                # Create the export request
-                $ExportRequest = New-MailboxExportRequest `
-                    -Mailbox $Line.Alias `
-                    -FilePath "$PSTPath\$($Line.Name).pst" `
-                    -ErrorAction Stop
-                }
-                catch {
-                    "$_" >> .\logs.txt
-                    "$(Get-Date -Format G): $($Line.Alias) Failed to create export request" >> .\logs.txt
-                    Send-Email
-                    continue
-                }
-                # Check for completion
-                do {
-                    # Wait 60 seconds to let the export request run
-                    Start-Sleep -Seconds 60
+            # 1. Check ExportPST. Export if Y and wait until it's completed.
+            if ($Line.ExportPST -eq 'Y') {
+                $ExportFlag = Export-PST -Name $Line.Alias -FullName $Line.Name
+            }
 
-                    $Request = Get-MailboxExportRequest -Identity $ExportRequest.Identity
-                    # Quit the loop once the export is failed
-                    if ($Request.Status -in 'Completed','CompletedWithWarning') {
-                        # Write log
-                        "$(Get-Date -Format G): Exported PST to $PSTPath\$($Line.Name).pst" >> .\logs.txt
-                        break
-                    } elseif ($Request.Status -in 'Failed','AutoSuspended','None','Suspended','Synced') {
-                        # When the export job status is failed or pending
-                        "$(Get-Date -Format G): ExportPST failed for $($Line.Alias)." >> .\logs.txt
-                        $ExportFlag = $false
-                        Send-Email
-                        break
-                    } else {
-                        continue
+            # 2. Once Step 1 is completed, check FwdEmail. Remove UM and mailbox as needed.
+            if ($Line.FwdEmail -eq 'Y') {
+                # Either Export is complete or there is no export required, mailbox is safe to delete.
+                if (($ExportFlag -eq $true) -or ($Line.ExportPST -eq 'N')) {
+                    try {
+                        Disable-UMMailbox -Identity $Line.Alias -Confirm:$false -ErrorAction Stop
+                        "$(Get-Date -Format G): Disabled UM mailbox $($Line.Alias)" >> .\logs.txt
                     }
-                } while ($true)
-
-                if ($ExportFlag -eq $false) {
-                    continue
-                }
-
-                try {
-                    # Disable the mailbox after the export is completed
-                    Disable-UserMailbox -Name $Line.Alias
-                }
-                catch {
-                    "$_" >> .\logs.txt
-                    "$(Get-Date -Format G): Failed to disable mailbox $($Line.Alias)" >> .\logs.txt
+                    catch {
+                        "$_" >> .\logs.txt
+                        "$(Get-Date -Format G): Failed to disable UM mailbox $($Line.Alias)" >> .\logs.txt
+                        Send-Email
+                    }
+                    try {
+                        Disable-Mailbox -Identity $Line.Alias -Confirm:$false -ErrorAction Stop
+                        "$(Get-Date -Format G): Disabled mailbox $($Line.Alias)" >> .\logs.txt
+                    }
+                    catch {
+                        "$_" >> .\logs.txt
+                        "$(Get-Date -Format G): Failed to disable mailbox $($Line.Alias)" >> .\logs.txt
+                        Send-Email
+                    }
+                } else {
+                    "$(Get-Date -Format G): Export PST is not completed $($Line.Alias)"
                     Send-Email
                 }
             }
-            # 2. When mailbox is forwared but not requiring exporting PST which
-            # has already been done during normal departing user process
-            elseif (($Line.ExportPST -eq 'N') -and ($Line.FwdEmail -eq 'Y')) {
-                try {
-                    Disable-UserMailbox -Name $Line.Alias
-                }
-                catch {
-                    "$_" >> .\logs.txt
-                    "$(Get-Date -Format G): Failed to disable mailbox $($Line.Alias)" >> .\logs.txt
-                    Send-Email
-                }
-            }
-            # 3. When mailbox is set to Export and Forwarding. Not expected
-            elseif (($Line.ExportPST -eq 'Y') -and ($Line.FwdEmail -eq 'Y')) {
-                "$(Get-Date -Format G): $($Line.Name)Cannot have both ExportPST and FwdEmail set to Y.
-                        Export must be done when enabling email forwarding.
-                        Please manually complete the departing." >> .\logs.txt
-            }
-            # 4. When both is set to N, nothing is processed
-            elseif (($Line.ExportPST -eq 'N') -and ($Line.FwdEmail -eq 'N')) {
-                "$(Get-Date -Format G): $($Line.Alias) Both ExportPST and FwdEmail are set to N" >> .\logs.txt
-            }
 
-            # Check Y to remove Lync user
+            # 3. Check FwdLync to remove Lync user
             if ($Line.FwdLync -eq 'Y') {
                 try {
                     $UPN = (Get-ADUser -Identity $Line.Alias).UserPrincipalName
-                    Remove-LyncUser -Name $UPN
+                    Disable-CsUser -Identity $UPN -Confirm:$false -ErrorAction Stop
+                    "$(Get-Date -Format G): Removed Lync user $($Line.Alias)" >> .\logs.txt
                 }
                 catch {
                     "$_" >> .\logs.txt
