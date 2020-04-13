@@ -57,7 +57,7 @@ function Sync-Config {
     Push-Location
     Set-Location $RepoPath
     if ($PushOrPull -eq 'Push') {
-        Write-Host "Copying $Src to $RepoPath"
+        Write-Host "Copying "$ConfigPath\$FileName" to $RepoPath"
         Copy-Item "$ConfigPath\$FileName" $RepoPath -Force -Confirm:$false
         git pull
         git add .
