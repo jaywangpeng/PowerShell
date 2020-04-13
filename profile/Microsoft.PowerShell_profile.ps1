@@ -1,5 +1,5 @@
 function prompt {
-    Write-Host "$(Get-Date -Format 'dd/MM HH:mm:ss')" -NoNewLine -ForegroundColor Gray
+    Write-Host "$(Get-Date -Format 'HH:mm:ss')" -NoNewLine -ForegroundColor Gray
     if (git status 2>$null) {
         $Git = git rev-parse --abbrev-ref HEAD
         Write-Host "[$Git]" -NoNewLine -ForegroundColor Magenta
@@ -39,28 +39,35 @@ function ConvertTo-Base64 {
     [System.Convert]::ToBase64String($bytes)
 }
 
-function Push-Config {
-    param ($VimOrPS = $null)
+function Sync-Config {
+    param (
+        [ValidateSet('Vim', 'PS')][Parameter(Mandatory=$true)]$VimOrPS,
+        [ValidateSet('Push', 'Pull')][Parameter(Mandatory=$true)]$PushOrPull
+    )
     if ($VimOrPS -eq 'Vim') {
-        $RepoPath = 'E:\Repos\VimConfigs\gvim\'
-        $Src = '~\_vimrc'
-    }
-    elseif ($VimOrPS -eq 'PS') {
-        $RepoPath = 'E:\Repos\PowerShell\profile\'
-        $Src = 'E:\Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
+        $RepoPath = 'E:\Repos\VimConfigs\gvim'
+        $FileName = '_vimrc'
+        $ConfigPath = 'C:\Users\jaywa'
     }
     else {
-        Write-Host 'Nothing is pushed'
-        return
+        $RepoPath = 'E:\Repos\PowerShell\profile'
+        $FileName = 'Microsoft.PowerShell_profile.ps1'
+        $ConfigPath = 'E:\Documents\PowerShell'
     }
     Push-Location
     Set-Location $RepoPath
-    Write-Host "Copying $Src to $RepoPath"
-    Copy-Item $Src $RepoPath -Force -Confirm:$false
-    git pull
-    git add .
-    git commit -m 'update gvim'
-    git push
+    if ($PushOrPull -eq 'Push') {
+        Write-Host "Copying $Src to $RepoPath"
+        Copy-Item "$ConfigPath\$FileName" $RepoPath -Force -Confirm:$false
+        git pull
+        git add .
+        git commit -m 'update config'
+        git push
+    }
+    else {
+        git pull
+        Copy-Item "$RepoPath\$FileName" $ConfigPath -Force -Confirm:$false
+    }
     Pop-Location
     Write-Host 'Done' -ForegroundColor Green
 }
