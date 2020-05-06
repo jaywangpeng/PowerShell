@@ -46,7 +46,7 @@ function Sync-Config {
     )
     if ($VimOrPS -eq 'Vim') {
         $RepoPath = 'E:\Repos\VimConfigs\gvim'
-        $FileName = '_vimrc'
+        $FileName = @('_vimrc', '.ycm_extra_conf.py')
         $ConfigPath = 'C:\Users\jaywa'
     }
     else {
@@ -58,7 +58,9 @@ function Sync-Config {
     Set-Location $RepoPath
     if ($PushOrPull -eq 'Push') {
         Write-Host "Copying "$ConfigPath\$FileName" to $RepoPath"
-        Copy-Item "$ConfigPath\$FileName" $RepoPath -Force -Confirm:$false
+        $FileName | Foreach-Object {
+            Copy-Item "$ConfigPath\$_" $RepoPath -Force -Confirm:$false
+        }
         git pull
         git add .
         git commit -m 'update config'
@@ -66,7 +68,9 @@ function Sync-Config {
     }
     else {
         git pull
-        Copy-Item "$RepoPath\$FileName" $ConfigPath -Force -Confirm:$false
+        $FileName | Foreach-Object {
+            Copy-Item "$RepoPath\$_" $ConfigPath -Force -Confirm:$false
+        }
     }
     Pop-Location
     Write-Host 'Done' -ForegroundColor Green
