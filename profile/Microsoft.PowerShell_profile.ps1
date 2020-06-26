@@ -45,14 +45,14 @@ function Sync-Config {
         [ValidateSet('Push', 'Pull')][Parameter(Mandatory=$true)]$PushOrPull
     )
     if ($VimOrPS -eq 'Vim') {
-        $RepoPath = 'E:\Repos\VimConfigs\gvim'
+        $RepoPath = 'C:\Git\VimConfigs\gvim'
         $FileName = @('_vimrc', '.ycm_extra_conf.py')
         $ConfigPath = 'C:\Users\jaywa'
     }
     else {
-        $RepoPath = 'E:\Repos\PowerShell\profile'
+        $RepoPath = 'C:\Git\PowerShell\profile'
         $FileName = 'Microsoft.PowerShell_profile.ps1'
-        $ConfigPath = 'E:\Documents\PowerShell'
+        $ConfigPath = 'C:\Users\jaywa\Documents\PowerShell'
     }
     Push-Location
     Set-Location $RepoPath
@@ -76,9 +76,9 @@ function Sync-Config {
     Write-Host 'Done' -ForegroundColor Green
 }
 
-New-Alias -Name 'vim' -Value 'C:\Program Files (x86)\Vim\vim82\gvim.exe'
-New-Alias -Name 'vi' -Value 'C:\Program Files (x86)\Vim\vim82\gvim.exe'
+New-Alias -Name 'vim' -Value 'C:\Program Files\Vim\vim82\gvim.exe'
+New-Alias -Name 'vi' -Value 'C:\Program Files\Vim\vim82\gvim.exe'
 New-Alias -Name 'll' -Value 'Get-ChildItem'
 New-Alias -Name 'grep' -Value 'Select-String'
 chcp 65001
-cd 'E:\Repos'
+cd 'C:\Git'
